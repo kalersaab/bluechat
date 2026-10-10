@@ -21,11 +21,6 @@
     "jsSrcsDir": "specs",
     "android": {
       "javaPackageName": "com.android.bluechat"
-    },
-    "ios": {
-      "modulesProvider": {
-        "NativeBlueChatModule": "NativeBlueChatModuleProvider"
-      }
     }
   },
   "devDependencies": {

@@ -29,6 +29,7 @@ const requestBluetoothPermissions = async (): Promise<boolean> => {
       ? [
           PermissionsAndroid.PERMISSIONS.BLUETOOTH_SCAN,
           PermissionsAndroid.PERMISSIONS.BLUETOOTH_CONNECT,
+          PermissionsAndroid.PERMISSIONS.BLUETOOTH_ADVERTISE,
         ]
       : [PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION];
 
@@ -53,7 +54,11 @@ const getSignalBars = (rssi: number): string => {
   return '▂';
 };
 
-function BluetoothSearchScreen() {
+type BluetoothSearchScreenProps = {
+  onSelectDevice: (device: BluetoothDevice) => void;
+};
+
+function BluetoothSearchScreen({ onSelectDevice }: BluetoothSearchScreenProps) {
   const insets = useSafeAreaInsets();
   const [isScanning, setIsScanning] = useState(false);
   const [devices, setDevices] = useState<BluetoothDevice[]>([]);
@@ -124,7 +129,7 @@ function BluetoothSearchScreen() {
   }, [startScan, clearFallback]);
 
   const renderItem: ListRenderItem<BluetoothDevice> = ({ item }) => (
-    <Pressable style={styles.deviceRow}>
+    <Pressable style={styles.deviceRow} onPress={() => onSelectDevice(item)}>
       <View style={styles.deviceIcon}>
         <Text style={styles.deviceIconText}>BT</Text>
       </View>
