@@ -1,10 +1,3 @@
-/**
- * Sample React Native App
- * https://github.com/facebook/react-native
- *
- * @format
- */
-
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { StatusBar, TurboModuleRegistry } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';

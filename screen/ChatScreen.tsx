@@ -12,6 +12,12 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import {
+  getMessagesForDevice,
+  saveMessage,
+  type ChatMessage,
+  type ChatSender,
+} from '../db/chatDatabase';
 import type {
   BluetoothDevice,
   Spec,
@@ -19,11 +25,23 @@ import type {
 
 const NativeModule = TurboModuleRegistry.get<Spec>('BluetoothScanner');
 
-type Message = {
-  id: string;
-  text: string;
-  sender: 'me' | 'them';
-  timestamp: number;
+type Message = ChatMessage;
+
+const mergeMessages = (primary: Message[], secondary: Message[]): Message[] => {
+  const seen = new Set(primary.map(item => item.id));
+  const merged = [...primary];
+  for (const item of secondary) {
+    if (!seen.has(item.id)) {
+      seen.add(item.id);
+      merged.push(item);
+    }
+  }
+  return merged.sort((left, right) => {
+    if (left.timestamp !== right.timestamp) {
+      return left.timestamp - right.timestamp;
+    }
+    return left.id.localeCompare(right.id);
+  });
 };
 
 type ChatScreenProps = {
@@ -42,10 +60,50 @@ const formatTime = (timestamp: number): string => {
 function ChatScreen({ device, initiator, onBack }: ChatScreenProps) {
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<Message>>(null);
-  const nextId = useRef(0);
   const [draft, setDraft] = useState('');
   const [messages, setMessages] = useState<Message[]>([]);
   const [connected, setConnected] = useState(!initiator);
+
+  const persistMessage = useCallback(
+    async (text: string, sender: ChatSender) => {
+      const timestamp = Date.now();
+      try {
+        const saved = await saveMessage({
+          deviceId: device.id,
+          text,
+          sender,
+          timestamp,
+        });
+        setMessages(previous => mergeMessages(previous, [saved]));
+      } catch {
+        setMessages(previous =>
+          mergeMessages(previous, [
+            {
+              id: `local-${sender}-${timestamp}`,
+              text,
+              sender,
+              timestamp,
+            },
+          ]),
+        );
+      }
+    },
+    [device.id],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    getMessagesForDevice(device.id)
+      .then(history => {
+        if (!cancelled) {
+          setMessages(previous => mergeMessages(history, previous));
+        }
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [device.id]);
 
   useEffect(() => {
     if (!NativeModule) {
@@ -55,16 +113,7 @@ function ChatScreen({ device, initiator, onBack }: ChatScreenProps) {
       state => setConnected(state.connected),
     );
     const messageSubscription = NativeModule.onMessageReceived(message => {
-      nextId.current += 1;
-      setMessages(previous => [
-        ...previous,
-        {
-          id: `message-${nextId.current}`,
-          text: message.text,
-          sender: 'them',
-          timestamp: Date.now(),
-        },
-      ]);
+      persistMessage(message.text, 'them');
     });
 
     if (initiator) {
@@ -76,26 +125,17 @@ function ChatScreen({ device, initiator, onBack }: ChatScreenProps) {
       messageSubscription.remove();
       NativeModule.disconnect();
     };
-  }, [device.id, initiator]);
+  }, [device.id, initiator, persistMessage]);
 
   const sendMessage = useCallback(() => {
     const text = draft.trim();
     if (text.length === 0) {
       return;
     }
-    nextId.current += 1;
-    setMessages(previous => [
-      ...previous,
-      {
-        id: `message-${nextId.current}`,
-        text,
-        sender: 'me',
-        timestamp: Date.now(),
-      },
-    ]);
     setDraft('');
     NativeModule?.sendMessage(text);
-  }, [draft]);
+    persistMessage(text, 'me');
+  }, [draft, persistMessage]);
 
   const renderItem: ListRenderItem<Message> = ({ item }) => {
     const isMine = item.sender === 'me';
