@@ -15,6 +15,19 @@
     "@react-native/new-app-screen": "0.87.1",
     "react-native-safe-area-context": "^5.5.2"
   },
+  "codegenConfig": {
+    "name": "BlueChatSpecs",
+    "type": "modules",
+    "jsSrcsDir": "specs",
+    "android": {
+      "javaPackageName": "com.android.bluechat"
+    },
+    "ios": {
+      "modulesProvider": {
+        "NativeBlueChatModule": "NativeBlueChatModuleProvider"
+      }
+    }
+  },
   "devDependencies": {
     "@babel/core": "^7.25.2",
     "@babel/preset-env": "^7.25.3",

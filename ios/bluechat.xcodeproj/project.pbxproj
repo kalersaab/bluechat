@@ -9,9 +9,14 @@
 /* Begin PBXBuildFile section */
 		0C80B921A6F3F58F76C31292 /* libPods-bluechat.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-bluechat.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
+		2A72ABFA307A35A0008E0F93 /* SeceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A72ABF9307A35A0008E0F93 /* SeceneDelegate.swift */; };
 		3E2E810268241351DA256210 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
 		81AB9BB82411601600AC10FF /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */; };
+		AA0000000000000000000011 /* BluetoothScanner.mm in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000002 /* BluetoothScanner.mm */; };
+		AA0000000000000000000012 /* NativeBlueChatModuleProvider.mm in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000003 /* NativeBlueChatModuleProvider.mm */; };
+		AA0000000000000000000013 /* NativeBlueChatModule.cpp in Sources */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000004 /* NativeBlueChatModule.cpp */; };
+		AA0000000000000000000014 /* CoreBluetooth.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = AA0000000000000000000006 /* CoreBluetooth.framework */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -19,12 +24,19 @@
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = bluechat/Images.xcassets; sourceTree = "<group>"; };
 		13B07FB61A68108700A75B9A /* Info.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = Info.plist; path = bluechat/Info.plist; sourceTree = "<group>"; };
 		13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = PrivacyInfo.xcprivacy; path = bluechat/PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		2A72ABF9307A35A0008E0F93 /* SeceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = SeceneDelegate.swift; path = bluechat/SeceneDelegate.swift; sourceTree = "<group>"; };
 		3B4392A12AC88292D35C810B /* Pods-bluechat.debug.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-bluechat.debug.xcconfig"; path = "Target Support Files/Pods-bluechat/Pods-bluechat.debug.xcconfig"; sourceTree = "<group>"; };
 		5709B34CF0A7D63546082F79 /* Pods-bluechat.release.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Pods-bluechat.release.xcconfig"; path = "Target Support Files/Pods-bluechat/Pods-bluechat.release.xcconfig"; sourceTree = "<group>"; };
 		5DCACB8F33CDC322A6C60F78 /* libPods-bluechat.a */ = {isa = PBXFileReference; explicitFileType = archive.ar; includeInIndex = 0; path = "libPods-bluechat.a"; sourceTree = BUILT_PRODUCTS_DIR; };
 		761780EC2CA45674006654EE /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = AppDelegate.swift; path = bluechat/AppDelegate.swift; sourceTree = "<group>"; };
 		81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = file.storyboard; name = LaunchScreen.storyboard; path = bluechat/LaunchScreen.storyboard; sourceTree = "<group>"; };
+		AA0000000000000000000001 /* BluetoothScanner.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = BluetoothScanner.h; path = bluechat/BluetoothScanner.h; sourceTree = "<group>"; };
+		AA0000000000000000000002 /* BluetoothScanner.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = BluetoothScanner.mm; path = bluechat/BluetoothScanner.mm; sourceTree = "<group>"; };
+		AA0000000000000000000003 /* NativeBlueChatModuleProvider.mm */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.objcpp; name = NativeBlueChatModuleProvider.mm; path = ../shared/NativeBlueChatModuleProvider.mm; sourceTree = "<group>"; };
+		AA0000000000000000000004 /* NativeBlueChatModule.cpp */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.cpp.cpp; name = NativeBlueChatModule.cpp; path = ../shared/NativeBlueChatModule.cpp; sourceTree = "<group>"; };
+		AA0000000000000000000005 /* NativeBlueChatModule.h */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.h; name = NativeBlueChatModule.h; path = ../shared/NativeBlueChatModule.h; sourceTree = "<group>"; };
 		ED297162215061F000B7C4FE /* JavaScriptCore.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = JavaScriptCore.framework; path = System/Library/Frameworks/JavaScriptCore.framework; sourceTree = SDKROOT; };
+		AA0000000000000000000006 /* CoreBluetooth.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = CoreBluetooth.framework; path = System/Library/Frameworks/CoreBluetooth.framework; sourceTree = SDKROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -33,6 +45,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				0C80B921A6F3F58F76C31292 /* libPods-bluechat.a in Frameworks */,
+				AA0000000000000000000014 /* CoreBluetooth.framework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -42,11 +55,14 @@
 		13B07FAE1A68108700A75B9A /* bluechat */ = {
 			isa = PBXGroup;
 			children = (
+				2A72ABF9307A35A0008E0F93 /* SeceneDelegate.swift */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
 				81AB9BB72411601600AC10FF /* LaunchScreen.storyboard */,
 				13B07FB81A68108700A75B9A /* PrivacyInfo.xcprivacy */,
+				AA0000000000000000000001 /* BluetoothScanner.h */,
+				AA0000000000000000000002 /* BluetoothScanner.mm */,
 			);
 			name = bluechat;
 			sourceTree = "<group>";
@@ -55,6 +71,7 @@
 			isa = PBXGroup;
 			children = (
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
+				AA0000000000000000000006 /* CoreBluetooth.framework */,
 				5DCACB8F33CDC322A6C60F78 /* libPods-bluechat.a */,
 			);
 			name = Frameworks;
@@ -71,6 +88,7 @@
 			isa = PBXGroup;
 			children = (
 				13B07FAE1A68108700A75B9A /* bluechat */,
+				AA0000000000000000000021 /* Shared */,
 				832341AE1AAA6A7D00B99B32 /* Libraries */,
 				83CBBA001A601CBA00E9B192 /* Products */,
 				2D16E6871FA4F8E400B85C8A /* Frameworks */,
@@ -87,6 +105,16 @@
 				13B07F961A680F5B00A75B9A /* bluechat.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		AA0000000000000000000021 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				AA0000000000000000000005 /* NativeBlueChatModule.h */,
+				AA0000000000000000000004 /* NativeBlueChatModule.cpp */,
+				AA0000000000000000000003 /* NativeBlueChatModuleProvider.mm */,
+			);
+			name = Shared;
 			sourceTree = "<group>";
 		};
 		BBD78D7AC51CEA395F1C20DB /* Pods */ = {
@@ -247,6 +275,10 @@
 			buildActionMask = 2147483647;
 			files = (
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
+				2A72ABFA307A35A0008E0F93 /* SeceneDelegate.swift in Sources */,
+				AA0000000000000000000011 /* BluetoothScanner.mm in Sources */,
+				AA0000000000000000000012 /* NativeBlueChatModuleProvider.mm in Sources */,
+				AA0000000000000000000013 /* NativeBlueChatModule.cpp in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
