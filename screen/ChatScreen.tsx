@@ -15,39 +15,35 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   getMessagesForDevice,
   saveMessage,
-  type ChatMessage,
-  type ChatSender,
+  updateMessageStatus,
+  upsertContact,
 } from '../db/chatDatabase';
+import type { ChatMessage, ChatScreenProps, MessageStatus } from '../interface';
 import type {
-  BluetoothDevice,
+  MessagePacket,
   Spec,
 } from '../specs/NativeBluetoothScanner';
+import { UNKNOWN_DEVICE_NAME } from '../utils/device';
+import { createUuid } from '../utils/uuid';
 
 const NativeModule = TurboModuleRegistry.get<Spec>('BluetoothScanner');
 
 type Message = ChatMessage;
 
 const mergeMessages = (primary: Message[], secondary: Message[]): Message[] => {
-  const seen = new Set(primary.map(item => item.id));
-  const merged = [...primary];
-  for (const item of secondary) {
-    if (!seen.has(item.id)) {
-      seen.add(item.id);
-      merged.push(item);
-    }
+  const byId = new Map<string, Message>();
+  for (const item of primary) {
+    byId.set(item.messageId, item);
   }
-  return merged.sort((left, right) => {
+  for (const item of secondary) {
+    byId.set(item.messageId, item);
+  }
+  return [...byId.values()].sort((left, right) => {
     if (left.timestamp !== right.timestamp) {
       return left.timestamp - right.timestamp;
     }
-    return left.id.localeCompare(right.id);
+    return left.messageId.localeCompare(right.messageId);
   });
-};
-
-type ChatScreenProps = {
-  device: BluetoothDevice;
-  initiator: boolean;
-  onBack: () => void;
 };
 
 const formatTime = (timestamp: number): string => {
@@ -57,6 +53,14 @@ const formatTime = (timestamp: number): string => {
   return `${hours}:${minutes}`;
 };
 
+const STATUS_LABELS: Record<MessageStatus, string> = {
+  pending: 'Sending',
+  sent: 'Sent',
+  delivered: 'Delivered',
+  read: 'Read',
+  failed: 'Failed',
+};
+
 function ChatScreen({ device, initiator, onBack }: ChatScreenProps) {
   const insets = useSafeAreaInsets();
   const listRef = useRef<FlatList<Message>>(null);
@@ -64,31 +68,40 @@ function ChatScreen({ device, initiator, onBack }: ChatScreenProps) {
   const [messages, setMessages] = useState<Message[]>([]);
   const [connected, setConnected] = useState(!initiator);
 
-  const persistMessage = useCallback(
-    async (text: string, sender: ChatSender) => {
-      const timestamp = Date.now();
-      try {
-        const saved = await saveMessage({
-          deviceId: device.id,
-          text,
-          sender,
-          timestamp,
-        });
-        setMessages(previous => mergeMessages(previous, [saved]));
-      } catch {
-        setMessages(previous =>
-          mergeMessages(previous, [
-            {
-              id: `local-${sender}-${timestamp}`,
-              text,
-              sender,
-              timestamp,
-            },
-          ]),
-        );
-      }
+  const storeMessage = useCallback(
+    async (message: Message) => {
+      const saved = await saveMessage({ deviceId: device.id, ...message });
+      setMessages(previous => mergeMessages(previous, [saved]));
     },
     [device.id],
+  );
+
+  const applyStatus = useCallback(
+    async (messageId: string, status: MessageStatus) => {
+      setMessages(previous =>
+        previous.map(item =>
+          item.messageId === messageId ? { ...item, status } : item,
+        ),
+      );
+      await updateMessageStatus(messageId, status);
+    },
+    [],
+  );
+
+  const handleIncoming = useCallback(
+    (packet: MessagePacket) => {
+      if (packet.deviceId !== device.id) {
+        return;
+      }
+      storeMessage({
+        messageId: packet.messageId,
+        text: packet.text,
+        sender: 'them',
+        timestamp: packet.timestamp,
+        status: 'read',
+      }).catch(() => undefined);
+    },
+    [device.id, storeMessage],
   );
 
   useEffect(() => {
@@ -106,14 +119,23 @@ function ChatScreen({ device, initiator, onBack }: ChatScreenProps) {
   }, [device.id]);
 
   useEffect(() => {
+    if (device.name && device.name !== UNKNOWN_DEVICE_NAME) {
+      upsertContact({ deviceId: device.id, name: device.name }).catch(
+        () => undefined,
+      );
+    }
+  }, [device.id, device.name]);
+
+  useEffect(() => {
     if (!NativeModule) {
       return;
     }
     const connectionSubscription = NativeModule.onConnectionStateChanged(
       state => setConnected(state.connected),
     );
-    const messageSubscription = NativeModule.onMessageReceived(message => {
-      persistMessage(message.text, 'them');
+    const messageSubscription = NativeModule.onMessageReceived(handleIncoming);
+    const ackSubscription = NativeModule.onAckReceived(ack => {
+      applyStatus(ack.messageId, 'delivered').catch(() => undefined);
     });
 
     if (initiator) {
@@ -123,9 +145,9 @@ function ChatScreen({ device, initiator, onBack }: ChatScreenProps) {
     return () => {
       connectionSubscription.remove();
       messageSubscription.remove();
-      NativeModule.disconnect();
+      ackSubscription.remove();
     };
-  }, [device.id, initiator, persistMessage]);
+  }, [applyStatus, device.id, initiator, handleIncoming]);
 
   const sendMessage = useCallback(() => {
     const text = draft.trim();
@@ -133,9 +155,29 @@ function ChatScreen({ device, initiator, onBack }: ChatScreenProps) {
       return;
     }
     setDraft('');
-    NativeModule?.sendMessage(text);
-    persistMessage(text, 'me');
-  }, [draft, persistMessage]);
+
+    const message: Message = {
+      messageId: createUuid(),
+      text,
+      sender: 'me',
+      timestamp: Date.now(),
+      status: 'pending',
+    };
+    setMessages(previous => mergeMessages(previous, [message]));
+
+    NativeModule?.sendMessage(
+      device.id,
+      message.messageId,
+      message.text,
+      message.timestamp,
+    );
+
+    storeMessage(message)
+      .then(() => applyStatus(message.messageId, 'sent').catch(() => undefined))
+      .catch(() =>
+        applyStatus(message.messageId, 'failed').catch(() => undefined),
+      );
+  }, [applyStatus, device.id, draft, storeMessage]);
 
   const renderItem: ListRenderItem<Message> = ({ item }) => {
     const isMine = item.sender === 'me';
@@ -146,9 +188,20 @@ function ChatScreen({ device, initiator, onBack }: ChatScreenProps) {
           <Text style={[styles.messageText, isMine && styles.messageTextMine]}>
             {item.text}
           </Text>
-          <Text style={[styles.messageTime, isMine && styles.messageTimeMine]}>
-            {formatTime(item.timestamp)}
-          </Text>
+          <View style={styles.metaRow}>
+            <Text style={[styles.messageTime, isMine && styles.messageTimeMine]}>
+              {formatTime(item.timestamp)}
+            </Text>
+            {isMine ? (
+              <Text
+                style={[
+                  styles.messageStatus,
+                  item.status === 'failed' && styles.messageStatusFailed,
+                ]}>
+                {STATUS_LABELS[item.status]}
+              </Text>
+            ) : null}
+          </View>
         </View>
       </View>
     );
@@ -181,7 +234,7 @@ function ChatScreen({ device, initiator, onBack }: ChatScreenProps) {
       <FlatList
         ref={listRef}
         data={messages}
-        keyExtractor={item => item.id}
+        keyExtractor={item => item.messageId}
         renderItem={renderItem}
         contentContainerStyle={styles.listContent}
         onContentSizeChange={() =>
@@ -301,14 +354,27 @@ const styles = StyleSheet.create({
   messageTextMine: {
     color: '#FFFFFF',
   },
-  messageTime: {
+  metaRow: {
     marginTop: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    alignSelf: 'flex-end',
+  },
+  messageTime: {
     fontSize: 10,
     color: '#8A94A6',
-    alignSelf: 'flex-end',
   },
   messageTimeMine: {
     color: '#D6E4FF',
+  },
+  messageStatus: {
+    marginLeft: 6,
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#D6E4FF',
+  },
+  messageStatusFailed: {
+    color: '#FF6B6B',
   },
   empty: {
     flex: 1,

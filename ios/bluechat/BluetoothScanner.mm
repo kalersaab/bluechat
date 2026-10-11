@@ -45,16 +45,15 @@ static CBUUID *BlueChatTxUUID(void)
   CBCharacteristic *_clientRx;
   CBCharacteristic *_clientTx;
   NSUInteger _clientChunkSize;
-  BOOL _writeInProgress;
-  NSMutableArray<NSData *> *_clientQueue;
 
   CBMutableCharacteristic *_serverRx;
   CBMutableCharacteristic *_serverTx;
   CBCentral *_subscribedCentral;
   BOOL _servicesAdded;
-  NSMutableArray<NSData *> *_serverQueue;
 
-  NSMutableData *_incomingBuffer;
+  NSMutableDictionary<NSString *, NSMutableArray<NSData *> *> *_outgoingQueues;
+  NSMutableDictionary<NSString *, NSMutableData *> *_incomingBuffers;
+  NSMutableSet<NSString *> *_pendingWrites;
   BOOL _isScanning;
   BOOL _wantsScan;
 }
@@ -73,9 +72,9 @@ RCT_EXPORT_MODULE(BluetoothScanner)
     _wantsScan = NO;
     _clientChunkSize = 20;
     _discoveredPeripherals = [NSMutableDictionary dictionary];
-    _clientQueue = [NSMutableArray array];
-    _serverQueue = [NSMutableArray array];
-    _incomingBuffer = [NSMutableData data];
+    _outgoingQueues = [NSMutableDictionary dictionary];
+    _incomingBuffers = [NSMutableDictionary dictionary];
+    _pendingWrites = [NSMutableSet set];
   }
   return self;
 }
@@ -155,11 +154,14 @@ RCT_EXPORT_MODULE(BluetoothScanner)
   });
 }
 
-- (void)sendMessage:(NSString *)text
+- (void)sendMessage:(NSString *)deviceId
+          messageId:(NSString *)messageId
+               text:(NSString *)text
+          timestamp:(double)timestamp
 {
   dispatch_async(dispatch_get_main_queue(), ^{
-    NSData *framed = [self frameMessage:text];
-    [self enqueueFramed:framed];
+    NSData *payload = [self encodeMessagePacket:messageId text:text timestamp:timestamp];
+    [self enqueueFramed:[self framePayload:payload] forDevice:deviceId];
   });
 }
 
@@ -210,9 +212,52 @@ RCT_EXPORT_MODULE(BluetoothScanner)
 
 #pragma mark - Framing
 
-- (NSData *)frameMessage:(NSString *)text
+- (NSData *)encodeMessagePacket:(NSString *)messageId
+                            text:(NSString *)text
+                       timestamp:(double)timestamp
 {
-  NSData *payload = [text dataUsingEncoding:NSUTF8StringEncoding];
+  NSMutableData *payload = [NSMutableData data];
+  uint8_t type = 1;
+  [payload appendBytes:&type length:1];
+  [self appendString:messageId toData:payload];
+  [self appendInt64:(uint64_t)timestamp toData:payload];
+  [self appendString:text toData:payload];
+  return payload;
+}
+
+- (NSData *)encodeAckPacket:(NSString *)messageId timestamp:(double)timestamp
+{
+  NSMutableData *payload = [NSMutableData data];
+  uint8_t type = 2;
+  [payload appendBytes:&type length:1];
+  [self appendString:messageId toData:payload];
+  [self appendInt64:(uint64_t)timestamp toData:payload];
+  return payload;
+}
+
+- (void)appendString:(NSString *)value toData:(NSMutableData *)data
+{
+  NSData *bytes = [value dataUsingEncoding:NSUTF8StringEncoding] ?: [NSData data];
+  uint16_t length = (uint16_t)bytes.length;
+  uint8_t header[2] = {
+    (uint8_t)((length >> 8) & 0xFF),
+    (uint8_t)(length & 0xFF),
+  };
+  [data appendBytes:header length:2];
+  [data appendData:bytes];
+}
+
+- (void)appendInt64:(uint64_t)value toData:(NSMutableData *)data
+{
+  uint8_t bytes[8];
+  for (int index = 0; index < 8; index++) {
+    bytes[index] = (uint8_t)((value >> (8 * (7 - index))) & 0xFF);
+  }
+  [data appendBytes:bytes length:8];
+}
+
+- (NSData *)framePayload:(NSData *)payload
+{
   uint32_t length = (uint32_t)payload.length;
   NSMutableData *framed = [NSMutableData dataWithCapacity:4 + payload.length];
   uint8_t header[4] = {
@@ -226,59 +271,90 @@ RCT_EXPORT_MODULE(BluetoothScanner)
   return framed;
 }
 
-- (void)enqueueFramed:(NSData *)framed
+- (NSMutableArray<NSData *> *)queueForDevice:(NSString *)deviceId
+{
+  NSMutableArray<NSData *> *queue = _outgoingQueues[deviceId];
+  if (queue == nil) {
+    queue = [NSMutableArray array];
+    _outgoingQueues[deviceId] = queue;
+  }
+  return queue;
+}
+
+- (NSMutableData *)incomingBufferForDevice:(NSString *)deviceId
+{
+  NSMutableData *buffer = _incomingBuffers[deviceId];
+  if (buffer == nil) {
+    buffer = [NSMutableData data];
+    _incomingBuffers[deviceId] = buffer;
+  }
+  return buffer;
+}
+
+- (void)enqueueFramed:(NSData *)framed forDevice:(NSString *)deviceId
 {
   NSUInteger chunkSize;
-  NSMutableArray<NSData *> *queue;
 
-  if (_subscribedCentral != nil && _serverTx != nil) {
+  if (_subscribedCentral != nil &&
+      [_subscribedCentral.identifier.UUIDString isEqualToString:deviceId] &&
+      _serverTx != nil) {
     NSUInteger maximum = MAX((NSUInteger)20, _subscribedCentral.maximumUpdateValueLength);
     chunkSize = MIN(maximum, (NSUInteger)180);
-    queue = _serverQueue;
-  } else if (_connectedPeripheral != nil && _clientRx != nil) {
+  } else if (_connectedPeripheral != nil &&
+             [_connectedPeripheral.identifier.UUIDString isEqualToString:deviceId] &&
+             _clientRx != nil) {
     chunkSize = _clientChunkSize > 0 ? _clientChunkSize : 20;
-    queue = _clientQueue;
   } else {
     return;
   }
 
+  NSMutableArray<NSData *> *queue = [self queueForDevice:deviceId];
   NSUInteger offset = 0;
   while (offset < framed.length) {
     NSUInteger end = MIN(offset + chunkSize, framed.length);
     [queue addObject:[framed subdataWithRange:NSMakeRange(offset, end - offset)]];
     offset = end;
   }
-  [self sendNextChunk];
+  [self sendNextChunkForDevice:deviceId];
 }
 
-- (void)sendNextChunk
+- (void)sendNextChunkForDevice:(NSString *)deviceId
 {
-  if (_subscribedCentral != nil && _serverTx != nil) {
-    if (_serverQueue.count == 0) {
+  if (_subscribedCentral != nil &&
+      [_subscribedCentral.identifier.UUIDString isEqualToString:deviceId] &&
+      _serverTx != nil) {
+    NSMutableArray<NSData *> *queue = [self queueForDevice:deviceId];
+    if (queue.count == 0) {
       return;
     }
-    NSData *chunk = _serverQueue.firstObject;
+    NSData *chunk = queue.firstObject;
     BOOL sent = [_peripheralManager updateValue:chunk
                               forCharacteristic:_serverTx
                            onSubscribedCentrals:@[ _subscribedCentral ]];
     if (sent) {
-      [_serverQueue removeObjectAtIndex:0];
+      [queue removeObjectAtIndex:0];
       __weak BluetoothScanner *weakSelf = self;
       dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.03 * NSEC_PER_SEC)),
                      dispatch_get_main_queue(), ^{
-                       [weakSelf sendNextChunk];
+                       [weakSelf sendNextChunkForDevice:deviceId];
                      });
     }
     return;
   }
 
-  if (_connectedPeripheral != nil && _clientRx != nil) {
-    if (_writeInProgress || _clientQueue.count == 0) {
+  if (_connectedPeripheral != nil &&
+      [_connectedPeripheral.identifier.UUIDString isEqualToString:deviceId] &&
+      _clientRx != nil) {
+    if ([_pendingWrites containsObject:deviceId]) {
       return;
     }
-    NSData *chunk = _clientQueue.firstObject;
-    [_clientQueue removeObjectAtIndex:0];
-    _writeInProgress = YES;
+    NSMutableArray<NSData *> *queue = [self queueForDevice:deviceId];
+    if (queue.count == 0) {
+      return;
+    }
+    NSData *chunk = queue.firstObject;
+    [queue removeObjectAtIndex:0];
+    [_pendingWrites addObject:deviceId];
     [_connectedPeripheral writeValue:chunk
                    forCharacteristic:_clientRx
                                 type:CBCharacteristicWriteWithResponse];
@@ -290,9 +366,10 @@ RCT_EXPORT_MODULE(BluetoothScanner)
   if (data.length == 0) {
     return;
   }
-  [_incomingBuffer appendData:data];
-  const uint8_t *bytes = (const uint8_t *)_incomingBuffer.bytes;
-  NSUInteger total = _incomingBuffer.length;
+  NSMutableData *incomingBuffer = [self incomingBufferForDevice:deviceId];
+  [incomingBuffer appendData:data];
+  const uint8_t *bytes = (const uint8_t *)incomingBuffer.bytes;
+  NSUInteger total = incomingBuffer.length;
   NSUInteger offset = 0;
 
   while (total - offset >= 4) {
@@ -301,23 +378,87 @@ RCT_EXPORT_MODULE(BluetoothScanner)
                       ((uint32_t)bytes[offset + 2] << 8) |
                       (uint32_t)bytes[offset + 3];
     if (length == 0 || length > 1000000) {
-      [_incomingBuffer setLength:0];
+      [incomingBuffer setLength:0];
       return;
     }
     if (total - offset - 4 < length) {
       break;
     }
-    NSData *payload = [_incomingBuffer subdataWithRange:NSMakeRange(offset + 4, length)];
-    NSString *text = [[NSString alloc] initWithData:payload encoding:NSUTF8StringEncoding];
+    NSData *payload = [incomingBuffer subdataWithRange:NSMakeRange(offset + 4, length)];
     offset += 4 + length;
-    if (text != nil) {
-      [self emitOnMessageReceived:@{@"text" : text, @"deviceId" : deviceId ?: @""}];
-    }
+    [self dispatchPayload:payload deviceId:deviceId];
   }
 
   if (offset > 0) {
-    [_incomingBuffer replaceBytesInRange:NSMakeRange(0, offset) withBytes:NULL length:0];
+    [incomingBuffer replaceBytesInRange:NSMakeRange(0, offset) withBytes:NULL length:0];
   }
+}
+
+- (void)dispatchPayload:(NSData *)payload deviceId:(NSString *)deviceId
+{
+  const uint8_t *bytes = (const uint8_t *)payload.bytes;
+  NSUInteger total = payload.length;
+  if (total < 1) {
+    return;
+  }
+
+  uint8_t type = bytes[0];
+  NSUInteger offset = 1;
+
+  NSString *messageId = [self readStringFrom:bytes length:total offset:&offset];
+  if (messageId == nil || total - offset < 8) {
+    return;
+  }
+  uint64_t rawTimestamp = 0;
+  for (int index = 0; index < 8; index++) {
+    rawTimestamp = (rawTimestamp << 8) | bytes[offset + index];
+  }
+  offset += 8;
+  NSString *resolvedDeviceId = deviceId ?: @"";
+
+  if (type == 1) {
+    NSString *text = [self readStringFrom:bytes length:total offset:&offset];
+    if (text == nil) {
+      return;
+    }
+    [self emitOnMessageReceived:@{
+      @"deviceId" : resolvedDeviceId,
+      @"messageId" : messageId,
+      @"text" : text,
+      @"timestamp" : @((double)rawTimestamp),
+    }];
+    double now = (double)((uint64_t)([[NSDate date] timeIntervalSince1970] * 1000.0));
+    NSData *ack = [self framePayload:[self encodeAckPacket:messageId timestamp:now]];
+    [self enqueueFramed:ack forDevice:resolvedDeviceId];
+    return;
+  }
+
+  if (type == 2) {
+    [self emitOnAckReceived:@{
+      @"deviceId" : resolvedDeviceId,
+      @"messageId" : messageId,
+      @"timestamp" : @((double)rawTimestamp),
+    }];
+  }
+}
+
+- (NSString *)readStringFrom:(const uint8_t *)bytes
+                      length:(NSUInteger)total
+                      offset:(NSUInteger *)offset
+{
+  if (total - *offset < 2) {
+    return nil;
+  }
+  uint16_t length = ((uint16_t)bytes[*offset] << 8) | (uint16_t)bytes[*offset + 1];
+  *offset += 2;
+  if (total - *offset < length) {
+    return nil;
+  }
+  NSString *value = [[NSString alloc] initWithBytes:bytes + *offset
+                                             length:length
+                                           encoding:NSUTF8StringEncoding];
+  *offset += length;
+  return value;
 }
 
 #pragma mark - Client (central role)
@@ -325,16 +466,18 @@ RCT_EXPORT_MODULE(BluetoothScanner)
 - (void)teardownClient
 {
   if (_connectedPeripheral != nil) {
+    NSString *deviceId = _connectedPeripheral.identifier.UUIDString;
     _connectedPeripheral.delegate = nil;
     if (_centralManager != nil) {
       [_centralManager cancelPeripheralConnection:_connectedPeripheral];
     }
     _connectedPeripheral = nil;
+    [_pendingWrites removeObject:deviceId];
+    [_outgoingQueues removeObjectForKey:deviceId];
+    [_incomingBuffers removeObjectForKey:deviceId];
   }
   _clientRx = nil;
   _clientTx = nil;
-  _writeInProgress = NO;
-  [_clientQueue removeAllObjects];
 }
 
 #pragma mark - Internal scan
@@ -419,12 +562,14 @@ RCT_EXPORT_MODULE(BluetoothScanner)
                       error:(NSError *)error
 {
   if (peripheral == _connectedPeripheral) {
+    NSString *deviceId = peripheral.identifier.UUIDString;
     _connectedPeripheral.delegate = nil;
     _connectedPeripheral = nil;
     _clientRx = nil;
     _clientTx = nil;
-    _writeInProgress = NO;
-    [_clientQueue removeAllObjects];
+    [_pendingWrites removeObject:deviceId];
+    [_outgoingQueues removeObjectForKey:deviceId];
+    [_incomingBuffers removeObjectForKey:deviceId];
   }
   [self emitOnConnectionStateChanged:@{
     @"connected" : @(NO),
@@ -485,8 +630,9 @@ RCT_EXPORT_MODULE(BluetoothScanner)
     didWriteValueForCharacteristic:(CBCharacteristic *)characteristic
                              error:(NSError *)error
 {
-  _writeInProgress = NO;
-  [self sendNextChunk];
+  NSString *deviceId = peripheral.identifier.UUIDString;
+  [_pendingWrites removeObject:deviceId];
+  [self sendNextChunkForDevice:deviceId];
 }
 
 #pragma mark - CBPeripheralManagerDelegate
@@ -536,17 +682,23 @@ RCT_EXPORT_MODULE(BluetoothScanner)
     didUnsubscribeFromCharacteristic:(CBCharacteristic *)characteristic
 {
   if ([characteristic.UUID isEqual:BlueChatTxUUID()] && central == _subscribedCentral) {
+    NSString *deviceId = central.identifier.UUIDString;
     _subscribedCentral = nil;
+    [_pendingWrites removeObject:deviceId];
+    [_outgoingQueues removeObjectForKey:deviceId];
+    [_incomingBuffers removeObjectForKey:deviceId];
     [self emitOnConnectionStateChanged:@{
       @"connected" : @(NO),
-      @"deviceId" : central.identifier.UUIDString,
+      @"deviceId" : deviceId,
     }];
   }
 }
 
 - (void)peripheralManagerIsReadyToUpdateSubscribers:(CBPeripheralManager *)peripheral
 {
-  [self sendNextChunk];
+  if (_subscribedCentral != nil) {
+    [self sendNextChunkForDevice:_subscribedCentral.identifier.UUIDString];
+  }
 }
 
 @end

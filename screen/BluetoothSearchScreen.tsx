@@ -12,10 +12,8 @@ import {
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type {
-  BluetoothDevice,
-  Spec,
-} from '../specs/NativeBluetoothScanner';
+import type { BluetoothDevice, BluetoothSearchScreenProps } from '../interface';
+import type { Spec } from '../specs/NativeBluetoothScanner';
 
 const NativeModule = TurboModuleRegistry.get<Spec>('BluetoothScanner');
 
@@ -54,11 +52,10 @@ const getSignalBars = (rssi: number): string => {
   return '▂';
 };
 
-type BluetoothSearchScreenProps = {
-  onSelectDevice: (device: BluetoothDevice) => void;
-};
-
-function BluetoothSearchScreen({ onSelectDevice }: BluetoothSearchScreenProps) {
+function BluetoothSearchScreen({
+  onSelectDevice,
+  onBack,
+}: BluetoothSearchScreenProps) {
   const insets = useSafeAreaInsets();
   const [isScanning, setIsScanning] = useState(false);
   const [devices, setDevices] = useState<BluetoothDevice[]>([]);
@@ -144,12 +141,23 @@ function BluetoothSearchScreen({ onSelectDevice }: BluetoothSearchScreenProps) {
   return (
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
-        <Text style={styles.title}>Bluetooth Devices</Text>
-        <Text style={styles.subtitle}>
-          {isScanning
-            ? 'Searching for nearby devices...'
-            : `${devices.length} device${devices.length === 1 ? '' : 's'} found`}
-        </Text>
+        {onBack ? (
+          <Pressable
+            onPress={onBack}
+            style={styles.backButton}
+            accessibilityRole="button"
+            accessibilityLabel="Go back">
+            <Text style={styles.backIcon}>‹</Text>
+          </Pressable>
+        ) : null}
+        <View style={styles.headerText}>
+          <Text style={styles.title}>Bluetooth Devices</Text>
+          <Text style={styles.subtitle}>
+            {isScanning
+              ? 'Searching for nearby devices...'
+              : `${devices.length} device${devices.length === 1 ? '' : 's'} found`}
+          </Text>
+        </View>
       </View>
 
       <FlatList
@@ -190,9 +198,27 @@ const styles = StyleSheet.create({
     backgroundColor: '#0E1116',
   },
   header: {
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 16,
     paddingBottom: 12,
+  },
+  headerText: {
+    flex: 1,
+  },
+  backButton: {
+    width: 32,
+    height: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginLeft: -8,
+    marginRight: 4,
+  },
+  backIcon: {
+    fontSize: 34,
+    lineHeight: 36,
+    color: '#2F80ED',
   },
   title: {
     fontSize: 28,

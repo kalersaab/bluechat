@@ -25,7 +25,9 @@ class MainActivity : ReactActivity() {
       DefaultReactActivityDelegate(this, mainComponentName, fabricEnabled)
 
   override fun onCreate(savedInstanceState: Bundle?) {
-    super.onCreate(savedInstanceState)
+    // react-native-screens requires the activity to not restore fragments itself,
+    // otherwise returning to the app can crash with a Fragment state restore error.
+    super.onCreate(null)
 
     // With edge-to-edge enabled (edgeToEdgeEnabled=true / targetSdk 35+), the window is no longer
     // resized for the soft keyboard, so windowSoftInputMode="adjustResize" is a no-op and inputs

@@ -13,9 +13,17 @@ export type ConnectionState = {
   deviceId: string;
 };
 
-export type ChatMessage = {
-  text: string;
+export type MessagePacket = {
   deviceId: string;
+  messageId: string;
+  text: string;
+  timestamp: number;
+};
+
+export type AckPacket = {
+  deviceId: string;
+  messageId: string;
+  timestamp: number;
 };
 
 export interface Spec extends TurboModule {
@@ -25,12 +33,18 @@ export interface Spec extends TurboModule {
 
   readonly connect: (deviceId: string) => void;
   readonly disconnect: () => void;
-  readonly sendMessage: (text: string) => void;
+  readonly sendMessage: (
+    deviceId: string,
+    messageId: string,
+    text: string,
+    timestamp: number,
+  ) => void;
 
   readonly onDeviceFound: CodegenTypes.EventEmitter<BluetoothDevice>;
   readonly onSearchStateChanged: CodegenTypes.EventEmitter<boolean>;
   readonly onConnectionStateChanged: CodegenTypes.EventEmitter<ConnectionState>;
-  readonly onMessageReceived: CodegenTypes.EventEmitter<ChatMessage>;
+  readonly onMessageReceived: CodegenTypes.EventEmitter<MessagePacket>;
+  readonly onAckReceived: CodegenTypes.EventEmitter<AckPacket>;
 }
 
 export default TurboModuleRegistry.getEnforcing<Spec>('BluetoothScanner');
