@@ -19,6 +19,7 @@ import com.bluechat.protocol.PacketDecoder
 import com.bluechat.protocol.PacketEncoder
 import com.bluechat.protocol.PacketFramer
 import com.facebook.react.bridge.ReactApplicationContext
+import java.util.LinkedHashMap
 import java.util.UUID
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -40,12 +41,19 @@ class BleManager(
     fun onConnectionStateChanged(state: ConnectionState)
     fun onMessageReceived(deviceId: String, packet: MessagePacket)
     fun onAckReceived(deviceId: String, packet: AckPacket)
+    fun onMessageFailed(deviceId: String, messageId: String) {}
   }
 
   private val searching = AtomicBoolean(false)
   private val handler = Handler(Looper.getMainLooper())
   private val connections = mutableMapOf<String, DeviceConnection>()
   private val framer = PacketFramer()
+  private val seenMessages = SeenMessageCache()
+  private val pendingSends = java.util.LinkedHashMap<String, PendingSend>()
+  private val pendingTimers = java.util.LinkedHashMap<String, Runnable>()
+  private val recovery = ConnectionRecovery()
+
+  private fun sendKey(deviceId: String, messageId: String): String = "$deviceId:$messageId"
 
   private val server = BleServer(context, this)
   private val client = BleClient(context, this)
@@ -111,7 +119,43 @@ class BleManager(
   }
 
   fun sendMessage(deviceId: String, messageId: String, text: String, timestamp: Long) {
-    sendPacket(deviceId, MessagePacket(messageId, timestamp, text))
+    val packet = MessagePacket(messageId, timestamp, text)
+    val key = sendKey(deviceId, messageId)
+    val pending = PendingSend(deviceId, packet, 0)
+    synchronized(pendingSends) {
+      pendingSends[key] = pending
+    }
+    scheduleTimeout(key)
+    sendPacket(deviceId, packet)
+    recovery.recordDevice(deviceId)
+  }
+
+  private fun scheduleTimeout(key: String) {
+    val runnable = Runnable {
+      handleTimeout(key)
+    }
+    synchronized(pendingTimers) {
+      pendingTimers[key] = runnable
+    }
+    handler.postDelayed(runnable, ACK_TIMEOUT_MS)
+  }
+
+  private fun handleTimeout(key: String) {
+    val pending = synchronized(pendingSends) {
+      pendingSends[key]
+    } ?: return
+    if (pending.retryCount >= MAX_RETRIES) {
+      synchronized(pendingSends) { pendingSends.remove(key) }
+      synchronized(pendingTimers) { pendingTimers.remove(key) }
+      listener.onMessageFailed(pending.deviceId, pending.packet.messageId)
+      return
+    }
+    val newPending = pending.copy(retryCount = pending.retryCount + 1)
+    synchronized(pendingSends) {
+      pendingSends[key] = newPending
+    }
+    sendPacket(pending.deviceId, pending.packet)
+    scheduleTimeout(key)
   }
 
   fun close() {
@@ -176,10 +220,26 @@ class BleManager(
       val packet = PacketDecoder.decode(payload) ?: continue
       when (packet) {
         is MessagePacket -> {
-          listener.onMessageReceived(deviceId, packet)
-          sendPacket(deviceId, AckPacket(packet.messageId, System.currentTimeMillis()))
+          val key = "$deviceId:${packet.messageId}"
+          if (seenMessages.has(key)) {
+            sendPacket(deviceId, AckPacket(packet.messageId, System.currentTimeMillis()))
+          } else {
+            seenMessages.add(key)
+            listener.onMessageReceived(deviceId, packet)
+            sendPacket(deviceId, AckPacket(packet.messageId, System.currentTimeMillis()))
+          }
         }
-        is AckPacket -> listener.onAckReceived(deviceId, packet)
+        is AckPacket -> {
+          val key = sendKey(deviceId, packet.messageId)
+          synchronized(pendingSends) {
+            pendingSends.remove(key)
+          }
+          val runnable = synchronized(pendingTimers) {
+            pendingTimers.remove(key)
+          }
+          runnable?.let { handler.removeCallbacks(it) }
+          listener.onAckReceived(deviceId, packet)
+        }
       }
     }
   }
@@ -232,6 +292,8 @@ class BleManager(
   }
 
   companion object {
+    private const val ACK_TIMEOUT_MS = 3000L
+    private const val MAX_RETRIES = 5
     val UUID_SERVICE: UUID = UUID.fromString("6E400001-B5A3-F393-E0A9-E50E24DCCA9E")
     val UUID_RX: UUID = UUID.fromString("6E400002-B5A3-F393-E0A9-E50E24DCCA9E")
     val UUID_TX: UUID = UUID.fromString("6E400003-B5A3-F393-E0A9-E50E24DCCA9E")
