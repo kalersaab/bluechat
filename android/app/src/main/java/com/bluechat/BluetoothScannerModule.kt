@@ -8,6 +8,8 @@ import com.bluechat.protocol.AckPacket
 import com.bluechat.protocol.MessagePacket
 import com.facebook.react.bridge.Arguments
 import com.facebook.react.bridge.ReactApplicationContext
+import com.facebook.react.bridge.Promise
+import com.facebook.react.bridge.WritableArray
 import com.facebook.react.bridge.WritableMap
 import com.facebook.react.module.annotations.ReactModule
 
@@ -75,6 +77,22 @@ class BluetoothScannerModule(reactContext: ReactApplicationContext) :
     map.putDouble("timestamp", packet.timestamp.toDouble())
     emitOnAckReceived(map)
   }
+
+
+
+  override fun sendMeshMessage(src: String, dst: String, text: String, id: String) {
+    manager.sendMeshMessage(src, dst, text, id)
+  }
+
+  override fun getRoutes(promise: Promise) {
+    manager.getRoutes(promise)
+  }
+
+  override fun updateRoute(dest: String, nextHop: String, cost: Double) {
+    manager.updateRoute(dest, nextHop, cost.toInt())
+  }
+
+
 
   override fun invalidate() {
     manager.close()

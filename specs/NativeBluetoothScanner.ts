@@ -26,6 +26,20 @@ export type AckPacket = {
   timestamp: number;
 };
 
+export type MeshMessage = {
+  id: string;
+  src: string;
+  dst: string;
+  text: string;
+};
+
+export type RouteEntry = {
+  dest: string;
+  nextHop: string;
+  cost: number;
+};
+
+
 export interface Spec extends TurboModule {
   readonly startBluetoothSearch: () => void;
   readonly stopBluetoothSearch: () => void;
@@ -39,6 +53,12 @@ export interface Spec extends TurboModule {
     text: string,
     timestamp: number,
   ) => void;
+
+  readonly sendMeshMessage: (src: string, dst: string, text: string, id: string) => void;
+  readonly getRoutes: () => Promise<RouteEntry[]>;
+  readonly updateRoute: (dest: string, nextHop: string, cost: number) => void;
+
+  readonly onMeshMessageReceived: CodegenTypes.EventEmitter<MeshMessage>;
 
   readonly onDeviceFound: CodegenTypes.EventEmitter<BluetoothDevice>;
   readonly onSearchStateChanged: CodegenTypes.EventEmitter<boolean>;

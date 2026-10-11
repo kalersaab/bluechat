@@ -18,6 +18,7 @@ import com.bluechat.protocol.Packet
 import com.bluechat.protocol.PacketDecoder
 import com.bluechat.protocol.PacketEncoder
 import com.bluechat.protocol.PacketFramer
+import com.facebook.react.bridge.Promise
 import com.facebook.react.bridge.ReactApplicationContext
 import java.util.LinkedHashMap
 import java.util.UUID
@@ -156,6 +157,21 @@ class BleManager(
     }
     sendPacket(pending.deviceId, pending.packet)
     scheduleTimeout(key)
+  }
+
+
+
+  fun sendMeshMessage(src: String, dst: String, text: String, id: String) {
+    // Basic mesh forwarding placeholder - store and relay via existing transport
+    // In a full implementation, this would use route table
+  }
+
+  fun getRoutes(promise: Promise) {
+    promise.resolve(android.os.Bundle().apply { putInt("count", 0) })
+  }
+
+  fun updateRoute(dest: String, nextHop: String, cost: Int) {
+    // placeholder
   }
 
   fun close() {
